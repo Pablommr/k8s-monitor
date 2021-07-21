@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prometheus-k8s-st
+  namespace: k8s-monitor
+spec:
+  serviceName: prometheus-k8s
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus-k8s
+  template:
+    metadata:
+      labels:
+        app: prometheus-k8s
+    spec:
+      restartPolicy: "Always"
+      securityContext:
+        runAsUser: 0
+      containers:
+      - name: listener
+        image: pablommr/listener:1.0.2
+        resources:
+          limits:
+            cpu: 10m
+            memory: 64Mi
+          requests:
+            cpu: 8m
+            memory: 48Mi
+        ports:
+        - containerPort: 3000
+          protocol: TCP
+          name: listener-port
+        volumeMounts:
+        - name: prometheus-targets
+          mountPath: /etc/prometheus
+          subPath: "targets.json"
+      - name: cleaner-ip
+        image: pablommr/cleaner-ip:1.0.0
+        resources:
+          limits:
+            cpu: 50m
+            memory: 32Mi
+          requests:
+            cpu: 30m
+            memory: 16Mi
+        volumeMounts:
+        - name: prometheus-targets
+          mountPath: /etc/prometheus
+          subPath: "targets.json"
+      - name: prometheus-k8s
+        image: prom/prometheus:v2.28.0
+        resources:
+          limits:
+            cpu: 100m
+            memory: 1024Mi
+          requests:
+            cpu: 80m
+            memory: 896Mi
+        args: ["--config.file=/etc/prometheus/prometheus.yml","--storage.tsdb.retention.time=90d"]
+        ports:
+        - containerPort: 9090
+          protocol: TCP
+          name: prom-k8s-port
+        volumeMounts:
+        - mountPath: /prometheus
+          name: prometheus-data
+        - mountPath: /etc/prometheus/prometheus.yml
+          name: prometheus-config
+          subPath: "prometheus.yml"
+        - mountPath: /etc/prometheus
+          name: prometheus-targets
+          subPath: "targets.json"
+      volumes:
+      - name: prometheus-data
+        persistentVolumeClaim:
+          claimName: prometheus-data-pvc
+      - name: prometheus-targets
+        emptyDir: {}
+      - name: prometheus-config
+        configMap: 
+          name: prom-config-confgmap
